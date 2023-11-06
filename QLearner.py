@@ -53,24 +53,30 @@ class QLearner(object):
     :param verbose: If “verbose” is True, your code can print out information for debugging.  		  	   		  		 		  		  		    	 		 		   		 		  
     :type verbose: bool  		  	   		  		 		  		  		    	 		 		   		 		  
     """  		  	   		  		 		  		  		    	 		 		   		 		  
-    def __init__(  		  	   		  		 		  		  		    	 		 		   		 		  
-        self,  		  	   		  		 		  		  		    	 		 		   		 		  
-        num_states=100,  		  	   		  		 		  		  		    	 		 		   		 		  
-        num_actions=4,  		  	   		  		 		  		  		    	 		 		   		 		  
-        alpha=0.2,  		  	   		  		 		  		  		    	 		 		   		 		  
-        gamma=0.9,  		  	   		  		 		  		  		    	 		 		   		 		  
-        rar=0.5,  		  	   		  		 		  		  		    	 		 		   		 		  
-        radr=0.99,  		  	   		  		 		  		  		    	 		 		   		 		  
-        dyna=0,  		  	   		  		 		  		  		    	 		 		   		 		  
-        verbose=False,  		  	   		  		 		  		  		    	 		 		   		 		  
-    ):  		  	   		  		 		  		  		    	 		 		   		 		  
+    def __init__(self, num_states=100, num_actions=4, alpha=0.2, gamma=0.9, rar=0.5, radr=0.99, dyna=0, verbose=False,):  		  	   		  		 		  		  		    	 		 		   		 		  
         """  		  	   		  		 		  		  		    	 		 		   		 		  
         Constructor method  		  	   		  		 		  		  		    	 		 		   		 		  
         """  		  	   		  		 		  		  		    	 		 		   		 		  
         self.verbose = verbose  		  	   		  		 		  		  		    	 		 		   		 		  
         self.num_actions = num_actions  		  	   		  		 		  		  		    	 		 		   		 		  
         self.s = 0  		  	   		  		 		  		  		    	 		 		   		 		  
-        self.a = 0  		  	   		  		 		  		  		    	 		 		   		 		  
+        self.a = 0 
+        
+        self.num_states = num_states
+        self.alpha = alpha
+        self.gamma = gamma
+        self.rar = rar
+        self.radr = radr
+        self.dyna = dyna
+        # self.Q = [[0.0 for _ in range(num_actions)] for _ in range(num_states)]  
+        # self.R = [[0.0 for _ in range(num_actions)] for _ in range(num_states)]
+        # self.Tc = [[[0.00001 for _ in range(num_states)] for _ in range(num_actions)] for _ in range(num_states)]	
+        # self.T = [[[(1.0 / num_states) for _ in range(num_states)] for _ in range(num_actions)] for _ in range(num_states)]		  		  		    	 		 		   		 		  
+        
+        # Vectorized for faster performance
+        self.Q = np.zeros((num_states, num_actions))
+        self.R = np.zeros((num_states, num_actions))
+        self.Tc = np.zeros((num_states, num_actions, num_states))
   		  	   		  		 		  		  		    	 		 		   		 		  
     def querysetstate(self, s):  		  	   		  		 		  		  		    	 		 		   		 		  
         """  		  	   		  		 		  		  		    	 		 		   		 		  
@@ -97,12 +103,67 @@ class QLearner(object):
         :type r: float  		  	   		  		 		  		  		    	 		 		   		 		  
         :return: The selected action  		  	   		  		 		  		  		    	 		 		   		 		  
         :rtype: int  		  	   		  		 		  		  		    	 		 		   		 		  
-        """  		  	   		  		 		  		  		    	 		 		   		 		  
-        action = rand.randint(0, self.num_actions - 1)  		  	   		  		 		  		  		    	 		 		   		 		  
+        """  		  	
+        # Update the Q-table for the last state-action pair using Q-learning update rule
+	
+        self.update_Q_table(self.s, self.a, s_prime, r)
+        
+        # Hallucination
+        if self.dyna != 0:
+            self.Tc[self.s, self.a, s_prime] += 1
+            self.R[self.s, self.a] = (1 - self.alpha) * self.R[self.s, self.a] + (self.alpha * r)
+            for _ in range(self.dyna):
+                # Randomly select a state and an action for dyna -- hallucinating
+                dyna_s = np.random.randint(0, self.num_states)                
+                dyna_a  = np.random.randint(0, self.num_actions)
+                # dyna_s = np.random.randint(0, self.num_states, size=self.dyna)
+                # dyna_a = np.random.randint(0, self.num_actions, size=self.dyna)
+                # Infer s_prime from T by drawing from the one with the highest probability
+                dyna_s_prime = np.argmax(self.Tc[dyna_s, dyna_a])
+                # Compute dyna r from simulated actions of s and a via R[s, a]
+                dyna_r = self.R[dyna_s, dyna_a]
+                self.update_Q_table(dyna_s, dyna_a, dyna_s_prime, dyna_r)
+           
+            # dyna_s_prime = np.argmax(self.Tc[dyna_s, dyna_a], axis = 1)
+                
+         # Choose the next action 
+        if rand.random() < self.rar:
+            action = rand.randint(0, self.num_actions - 1)  # Random action
+        else:
+            # Pick action with best Q value
+            action = np.argmax(self.Q[s_prime])
+            
+        # Update the exploration rate (rar) with the decay rate (radr)
+        self.rar *= self.radr
+        # Save the current state and action for the next iteration
+        self.s = s_prime
+        self.a = action
+        
+        # Printing for debugging
         if self.verbose:  		  	   		  		 		  		  		    	 		 		   		 		  
-            print(f"s = {s_prime}, a = {action}, r={r}")  		  	   		  		 		  		  		    	 		 		   		 		  
-        return action  		  	   		  		 		  		  		    	 		 		   		 		  
+            print(f"s = {s_prime}, a = {action}, r={r}") 
+             		  	   		  		 		  		  		    	 		 		   		 		  
+        return action  	
+    
+    def update_Q_table (self, s, a, s_prime, r):
+        # Old value we used to have that is Q[s,a] + improved estimate that is 
+        # Alpha is learning rate - it can take anything between 0 and 1 and usually value is 0.2
+        # Gamma is discount rate - it can take anything between 0 and 1 and usually value is 0.9
+        #   A low value gamma means that we value later rewards less and high value gamma means we value later reward significantly        
+        old_values = (1 - self.alpha) * self.Q[s, a]
+        future_discounted_rewards = self.Q[s_prime, np.argmax(self.Q[s_prime])]
+        improved_estimates = self.alpha * (r + self.gamma * future_discounted_rewards)
+        self.Q[s, a] = old_values + improved_estimates
+
+        return self.Q
+
   		  	   		  		 		  		  		    	 		 		   		 		  
-  		  	   		  		 		  		  		    	 		 		   		 		  
+    def author(self):  		  	   		  		 		  		  		    	 		 		   		 		  
+        """  		  	   		  		 		  		  		    	 		 		   		 		  
+        :return: The GT username of the student  		  	   		  		 		  		  		    	 		 		   		 		  
+        :rtype: str  		  	   		  		 		  		  		    	 		 		   		 		  
+        """  		  	   		  		 		  		  		    	 		 		   		 		  
+        return "agandhi301"  	
+    		  		 		  		  		    	 		 		   		 		  
 if __name__ == "__main__":  		  	   		  		 		  		  		    	 		 		   		 		  
     print("Remember Q from Star Trek? Well, this isn't him")  		  	   		  		 		  		  		    	 		 		   		 		  
